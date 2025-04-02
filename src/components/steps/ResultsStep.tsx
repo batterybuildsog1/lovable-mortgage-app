@@ -100,6 +100,15 @@ const ResultsStep: React.FC = () => {
         100 - loanDetails.ltv, // Convert LTV to down payment %
         pmiRate
       );
+
+      // --- BEGIN ADDED VALIDATION ---
+      if (!Number.isFinite(maxPurchasePrice) || maxPurchasePrice <= 0) {
+        console.error("Invalid maxPurchasePrice calculated:", maxPurchasePrice);
+        setValidationError("Could not calculate a valid maximum home price with the provided inputs. Please review your financial details.");
+        setIsCalculating(false);
+        return;
+      }
+      // --- END ADDED VALIDATION ---
       
       // Calculate loan amount
       const loanAmount = maxPurchasePrice * (loanDetails.ltv / 100);
@@ -113,6 +122,15 @@ const ResultsStep: React.FC = () => {
         loanDetails.propertyInsurance || 1200, // Annual insurance
         pmiRate // PMI/MIP rate
       );
+
+      // --- BEGIN ADDED VALIDATION ---
+      if (!Number.isFinite(monthlyPayment) || monthlyPayment <= 0) {
+        console.error("Invalid monthlyPayment calculated:", monthlyPayment);
+        setValidationError("Could not calculate a valid monthly payment with the provided inputs. Please review your financial details.");
+        setIsCalculating(false);
+        return;
+      }
+      // --- END ADDED VALIDATION ---
       
       // Generate alternative scenarios
       const scenarios = [];

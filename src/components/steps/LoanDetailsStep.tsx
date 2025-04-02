@@ -36,11 +36,14 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
   const downPaymentPercent = 100 - formData.ltv;
   
   const fetchExternalData = async () => {
+    console.log('[LoanDetailsStep] fetchExternalData started.');
     if (!apiKey || !userData.location.state || !userData.location.city) {
+      console.warn('[LoanDetailsStep] fetchExternalData: Missing location info or API key.', { hasApiKey: !!apiKey, hasState: !!userData.location.state, hasCity: !!userData.location.city });
       toast.error("Location information is incomplete. Please go back and complete it.");
       return false;
     }
     
+    console.log('[LoanDetailsStep] fetchExternalData: Setting isLoadingData to true.');
     setIsLoadingData(true);
     setApiError(false);
     
@@ -49,27 +52,35 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       setLoadingProgress(10);
       
       // Get interest rate data
-      const interestRate = await getInterestRates(apiKey, userData.location.state);
+      console.log('[LoanDetailsStep] fetchExternalData: Calling getInterestRates with:', { apiKey: '***', state: userData.location.state, loanType: formData.loanType }); // Log loanType
+      const interestRate = await getInterestRates(apiKey, userData.location.state, formData.loanType); // Pass formData.loanType
+      console.log('[LoanDetailsStep] fetchExternalData: Received interestRate:', interestRate);
       
       setLoadingProgress(40);
       setLoadingMessage("Fetching property tax information...");
       
       // Get property tax data
+      const locationForTax = userData.location.county || userData.location.city;
+      console.log('[LoanDetailsStep] fetchExternalData: Calling getPropertyTaxRate with:', { apiKey: '***', state: userData.location.state, location: locationForTax });
       const propertyTaxRate = await getPropertyTaxRate(
         apiKey, 
         userData.location.state, 
-        userData.location.county || userData.location.city
+        locationForTax
       );
+      console.log('[LoanDetailsStep] fetchExternalData: Received propertyTaxRate:', propertyTaxRate);
       
       setLoadingProgress(70);
       setLoadingMessage("Fetching insurance estimates...");
       
       // Get property insurance data
+      const zipForInsurance = userData.location.zipCode || "00000";
+      console.log('[LoanDetailsStep] fetchExternalData: Calling getPropertyInsurance with:', { apiKey: '***', state: userData.location.state, zipCode: zipForInsurance });
       const annualInsurance = await getPropertyInsurance(
         apiKey, 
         userData.location.state, 
-        userData.location.zipCode || "00000" // Provide fallback zip code
+        zipForInsurance // Provide fallback zip code
       );
+      console.log('[LoanDetailsStep] fetchExternalData: Received annualInsurance:', annualInsurance);
       
       setLoadingProgress(100);
       setLoadingMessage("Processing data...");
@@ -81,6 +92,7 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       });
       
       // Update form data with fetched values
+      console.log('[LoanDetailsStep] fetchExternalData: Updating formData state with fetched data.');
       setFormData(prev => ({
         ...prev,
         interestRate,
@@ -102,10 +114,11 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
         }));
       }
       
+      console.log('[LoanDetailsStep] fetchExternalData: Successfully fetched and processed data.');
       toast.success("Successfully fetched mortgage data!");
       return true;
     } catch (error) {
-      console.error("Error fetching data:", error);
+      console.error("[LoanDetailsStep] fetchExternalData: Error caught:", error);
       setApiError(true);
       toast.error("An error occurred while fetching data. Using fallback values.");
       
@@ -119,11 +132,13 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       
       return false;
     } finally {
+      console.log('[LoanDetailsStep] fetchExternalData: Setting isLoadingData to false.');
       setIsLoadingData(false);
     }
   };
   
   useEffect(() => {
+    console.log('[LoanDetailsStep] useEffect triggered for MIP calculation.', { loanType: formData.loanType, ltv: formData.ltv });
     if (formData.loanType === 'fha') {
       const { upfrontMipPercent, annualMipPercent } = getFhaMipRates(
         1000, // Placeholder loan amount
@@ -147,9 +162,17 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
   
   // Auto-fetch data on component mount if needed
   useEffect(() => {
+    console.log('[LoanDetailsStep] useEffect triggered for initial data fetch check.', { 
+      hasInterestRate: !!formData.interestRate, 
+      hasPropertyTax: !!formData.propertyTax, 
+      hasPropertyInsurance: !!formData.propertyInsurance 
+    });
     // Only auto-fetch if we don't have the data already
     if (!formData.interestRate || !formData.propertyTax || !formData.propertyInsurance) {
+      console.log('[LoanDetailsStep] Initial data missing, calling fetchExternalData.');
       fetchExternalData();
+    } else {
+      console.log('[LoanDetailsStep] Initial data already present, skipping fetch.');
     }
   }, []);
   
@@ -170,9 +193,10 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
     };
     
     // Save form data
+    console.log('[LoanDetailsStep] handleSubmit: Calling updateLoanDetails with:', dataToSave);
     updateLoanDetails(dataToSave);
-    console.log("Moving to next step with loan details:", dataToSave);
-    setCurrentStep(3);
+    console.log('[LoanDetailsStep] handleSubmit: Calling setCurrentStep(4)'); // Changed step to 4
+    setCurrentStep(4); // Advance to the next step (Results)
   };
 
   return (
@@ -262,21 +286,23 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
             </div>
             
             <div className="space-y-3">
+              {/* Use aria-labelledby approach */}
               <div className="flex justify-between">
-                <Label htmlFor="ltv">Down Payment: {downPaymentPercent}%</Label>
-                <span className="text-sm font-medium">
-                  LTV: {formData.ltv}%
-                </span>
+                {/* Give the label text an ID, remove htmlFor from Label component */}
+                <Label id="ltv-label">Down Payment: {downPaymentPercent}%</Label> 
+                <span className="text-sm font-medium">LTV: {formData.ltv}%</span>
               </div>
               <Slider
-                id="ltv"
+                id="ltv" // Keep id for potential other uses, but aria-labelledby is primary now
+                aria-labelledby="ltv-label" // Add aria-labelledby pointing to the label's ID
                 min={formData.loanType === 'conventional' ? 80 : 90}
                 max={formData.loanType === 'conventional' ? 97 : 96.5}
-                step={0.5}
-                value={[formData.ltv]}
-                onValueChange={(value) => setFormData({ ...formData, ltv: value[0] })}
-                className="py-4"
+                  step={0.5}
+                  value={[formData.ltv]}
+                  onValueChange={(value) => setFormData({ ...formData, ltv: value[0] })}
+                  className="py-4"
               />
+              {/* Removed the nested structure */}
               <div className="flex justify-between text-sm text-muted-foreground">
                 <span>{formData.loanType === 'conventional' ? '20%' : '10%'} down</span>
                 <span>{formData.loanType === 'conventional' ? '3%' : '3.5%'} down</span>

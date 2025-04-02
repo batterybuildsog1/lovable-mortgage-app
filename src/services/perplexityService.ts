@@ -135,10 +135,18 @@ export const fetchPerplexityData = async (
   }
 };
 
-export const getInterestRates = async (apiKey: string, state: string): Promise<number> => {
+// Updated function signature to accept loanType
+export const getInterestRates = async (apiKey: string, state: string, loanType: 'conventional' | 'fha'): Promise<number> => {
   try {
-    console.log(`Fetching interest rate data for ${state}...`);
-    const query = `What is the current average 30-year fixed mortgage interest rate in ${state}? Return only a single numeric value (percentage) as a JSON with the key "interestRate". For example: {"interestRate": 6.25}`;
+    // Construct query based on loan type
+    const rateDescription = loanType === 'fha' 
+      ? "FHA 30-year fixed mortgage rate" 
+      : "Conventional 30-year fixed mortgage rate";
+      
+    console.log(`Fetching ${rateDescription} data for ${state} (Loan Type: ${loanType})...`);
+    
+    // Updated query to be more specific and request data from Mortgage News Daily
+    const query = `What is today's ${rateDescription} according to Mortgage News Daily? Return only a single numeric value (percentage, including decimals) as a JSON with the key "interestRate". For example: {"interestRate": 6.875}`;
     
     const response = await fetchPerplexityData(apiKey, query);
     if (!response) {
