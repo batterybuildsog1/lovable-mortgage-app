@@ -100,16 +100,36 @@ export const getLtvRateAdjustment = (ltv: number): number => {
   return LTV_RATE_ADJUSTMENTS["above97"];
 };
 
+// Define the interest rates object type (matching the one in context/service)
+interface InterestRatesObject {
+  conventional: number | null;
+  fha: number | null;
+}
+
 export const calculateAdjustedRate = (
-  baseRate: number,
+  interestRates: InterestRatesObject, // New: takes the rates object
   ficoScore: number,
   ltv: number,
   loanType: 'conventional' | 'fha'
 ): number => {
+  // Select the base rate based on loan type
+  const baseRate = interestRates[loanType]; 
+  
+  // Handle case where the specific rate might be null (e.g., API failure)
+  if (baseRate === null) {
+    console.warn(`Base interest rate for ${loanType} is null. Using fallback logic or default.`);
+    // Return a default/fallback rate or handle error appropriately. 
+    // For now, let's return a high default to indicate an issue, 
+    // though ideally, this case is handled before calling this function.
+    return 99; // Or use fallbackData.interestRates[loanType] if defined appropriately
+  }
+
   const ficoAdjustment = getFicoRateAdjustment(ficoScore, loanType);
   const ltvAdjustment = getLtvRateAdjustment(ltv);
   
-  return baseRate + ficoAdjustment + ltvAdjustment;
+  // Ensure adjustments don't make rate negative, though unlikely with current values
+  const adjusted = baseRate + ficoAdjustment + ltvAdjustment;
+  return Math.max(adjusted, 0.1); // Prevent rate from being <= 0
 };
 
 export const calculateMaxDTI = (

@@ -28,13 +28,15 @@ export interface UserData {
     calculatedDTI: number | null;
     propertyTax: number | null;
     propertyInsurance: number | null;
-    interestRate: number | null;
+    interestRates: { conventional: number | null; fha: number | null }; // Corrected type
     upfrontMIP: number | null;
     ongoingMIP: number | null;
   };
   results: {
     maxHomePrice: number | null;
     monthlyPayment: number | null;
+    maxDTI: number | null; 
+    monthlyMI: number | null; // Add monthlyMI field
     scenarios: {
       loanType: 'conventional' | 'fha';
       ficoChange: number;
@@ -94,13 +96,15 @@ const defaultUserData: UserData = {
     calculatedDTI: null,
     propertyTax: null,
     propertyInsurance: null,
-    interestRate: null,
+    interestRates: { conventional: null, fha: null }, // Corrected default value
     upfrontMIP: null,
     ongoingMIP: null,
   },
   results: {
     maxHomePrice: null,
     monthlyPayment: null,
+    maxDTI: null, 
+    monthlyMI: null, // Initialize monthlyMI
     scenarios: [],
   },
   goals: {

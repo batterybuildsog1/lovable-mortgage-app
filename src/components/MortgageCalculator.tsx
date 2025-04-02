@@ -20,12 +20,16 @@ const MortgageCalculator: React.FC = () => {
     if (currentStep === 1 && (!userData.location.city || !userData.location.state)) {
       setCurrentStep(0);
     } else if (currentStep === 2 && !userData.financials.annualIncome) {
+      // User somehow got to step 3 without financials
+      console.warn("[MortgageCalculator] Missing financials for step 2, returning to step 1.");
       setCurrentStep(1);
-    } else if (currentStep === 3 && (!userData.loanDetails.interestRate || !userData.loanDetails.propertyTax)) {
+    } else if (currentStep === 3 && (!userData.loanDetails.interestRates || !(userData.loanDetails.interestRates.conventional || userData.loanDetails.interestRates.fha) || !userData.loanDetails.propertyTax)) {
+      // User somehow got to step 4 without required loan details (fetched in step 3)
+      console.warn("[MortgageCalculator] Missing required loan details for step 3, returning to step 2.");
       setCurrentStep(2);
-    } else if (currentStep === 4 && !userData.results.maxHomePrice) {
-      setCurrentStep(3);
-    }
+    } 
+    // Removed the check for step 4 (currentStep === 4) to prevent race condition.
+    // ResultsStep handles its own validation before allowing progression.
   }, [currentStep, userData, setCurrentStep]);
 
   // Map step components with their titles

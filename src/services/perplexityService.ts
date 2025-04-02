@@ -1,4 +1,5 @@
 
+
 import { toast } from "sonner";
 
 // Hard-coded API key for demo purposes
@@ -15,21 +16,14 @@ interface PerplexityResponse {
 
 // Fallback data in case API fails
 const fallbackData = {
+  // Updated fallback structure for both rates
   interestRates: {
-    default: 6.75,
-    states: {
-      "CA": 6.8,
-      "NY": 6.85,
-      "TX": 6.7,
-      "FL": 6.65,
-      "IL": 6.73,
-      "PA": 6.78,
-      "OH": 6.69,
-      "GA": 6.72,
-      "NC": 6.67,
-      "MI": 6.71
-    }
+    conventional: 7.0, 
+    fha: 6.75,
+    // State-specific fallbacks could be added here if needed, 
+    // but using general defaults for now.
   },
+  // Removed the first, incorrect propertyTaxRates object above this line
   propertyTaxRates: {
     default: 1.07,
     states: {
@@ -135,50 +129,64 @@ export const fetchPerplexityData = async (
   }
 };
 
-// Updated function signature to accept loanType
-export const getInterestRates = async (apiKey: string, state: string, loanType: 'conventional' | 'fha'): Promise<number> => {
+// Define the return type for the interest rates object
+interface InterestRatesResult {
+  conventional: number | null;
+  fha: number | null;
+}
+
+// Updated function signature: Removed loanType, returns an object with both rates
+export const getInterestRates = async (apiKey: string, state: string): Promise<InterestRatesResult> => {
+  const fallbackRates: InterestRatesResult = {
+    conventional: fallbackData.interestRates.conventional,
+    fha: fallbackData.interestRates.fha,
+  };
+
   try {
-    // Construct query based on loan type
-    const rateDescription = loanType === 'fha' 
-      ? "FHA 30-year fixed mortgage rate" 
-      : "Conventional 30-year fixed mortgage rate";
-      
-    console.log(`Fetching ${rateDescription} data for ${state} (Loan Type: ${loanType})...`);
+    console.log(`Fetching Conventional and FHA 30-year fixed rates for ${state}...`);
     
-    // Updated query to be more specific and request data from Mortgage News Daily
-    const query = `What is today's ${rateDescription} according to Mortgage News Daily? Return only a single numeric value (percentage, including decimals) as a JSON with the key "interestRate". For example: {"interestRate": 6.875}`;
+    // Updated query to ask for both rates in one JSON object
+    const query = `What are today's Conventional 30-year fixed mortgage rate AND FHA 30-year fixed mortgage rate according to Mortgage News Daily? Return only numeric values (percentage, including decimals) in a JSON object with keys 'conventionalRate' and 'fhaRate'. For example: {"conventionalRate": 7.125, "fhaRate": 6.875}`;
     
     const response = await fetchPerplexityData(apiKey, query);
+    
     if (!response) {
-      // Use fallback data if API fails
-      console.log("Using fallback interest rate data");
-      const fallbackRate = fallbackData.interestRates.states[state as keyof typeof fallbackData.interestRates.states] || 
-                          fallbackData.interestRates.default;
-      return fallbackRate;
+      console.log("API failed, using fallback interest rates.");
+      return fallbackRates;
     }
     
     try {
-      console.log("Parsing interest rate response:", response);
-      const data = JSON.parse(response.trim());
-      if (typeof data.interestRate !== 'number') {
-        console.error('Invalid interest rate value:', data.interestRate);
-        throw new Error('Invalid interest rate value');
+      console.log("Parsing interest rates response:", response);
+      // Attempt to clean potential markdown code block fences
+      const cleanedResponse = response.trim().replace(/^```json\s*|\s*```$/g, '');
+      const data = JSON.parse(cleanedResponse);
+      
+      // Validate the structure and types
+      const conventionalRate = typeof data.conventionalRate === 'number' ? data.conventionalRate : null;
+      const fhaRate = typeof data.fhaRate === 'number' ? data.fhaRate : null;
+
+      if (conventionalRate === null || fhaRate === null) {
+         console.warn('API response missing one or both rates, using fallbacks where necessary.', data);
+         // Return fetched rates if available, otherwise use fallback
+         return {
+           conventional: conventionalRate ?? fallbackRates.conventional,
+           fha: fhaRate ?? fallbackRates.fha,
+         };
       }
-      console.log(`Successfully parsed interest rate: ${data.interestRate}`);
-      return data.interestRate;
+
+      console.log(`Successfully parsed rates: Conventional=${conventionalRate}, FHA=${fhaRate}`);
+      return { conventional: conventionalRate, fha: fhaRate };
+      
     } catch (parseError) {
-      console.error('Invalid JSON format from API for interest rate:', response);
+      console.error('Invalid JSON format from API for interest rates:', response);
       console.error('Parse error:', parseError);
-      toast.error("Invalid data format received. Using fallback data.");
-      const fallbackRate = fallbackData.interestRates.states[state as keyof typeof fallbackData.interestRates.states] || 
-             fallbackData.interestRates.default;
-      console.log(`Using fallback interest rate: ${fallbackRate}`);
-      return fallbackRate;
+      toast.error("Invalid data format for rates. Using fallback data.");
+      return fallbackRates;
     }
   } catch (error) {
     console.error('Error in getInterestRates:', error);
     toast.error("Error processing interest rate data. Using fallback data.");
-    return fallbackData.interestRates.default;
+    return fallbackRates;
   }
 };
 

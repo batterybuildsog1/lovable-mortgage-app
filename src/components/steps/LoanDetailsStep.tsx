@@ -19,10 +19,17 @@ interface LoanDetailsStepProps {
 const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
   const { userData, updateLoanDetails, setCurrentStep, setIsLoadingData, isLoadingData } = useMortgage();
   
+  // Import the InterestRatesResult interface if it's exported from the service, or define it here
+  interface InterestRatesResult {
+    conventional: number | null;
+    fha: number | null;
+  }
+
   const [formData, setFormData] = useState({
     loanType: userData.loanDetails.loanType || 'conventional',
     ltv: userData.loanDetails.ltv || 80,
-    interestRate: userData.loanDetails.interestRate || null,
+    // New: interestRates object
+    interestRates: userData.loanDetails.interestRates || { conventional: null, fha: null }, 
     propertyTax: userData.loanDetails.propertyTax || null,
     propertyInsurance: userData.loanDetails.propertyInsurance || null,
     upfrontMIP: userData.loanDetails.upfrontMIP || null,
@@ -32,6 +39,7 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState("Initializing...");
   const [apiError, setApiError] = useState(false);
+  // Removed monthlyMipPmiAmount state
   
   const downPaymentPercent = 100 - formData.ltv;
   
@@ -51,10 +59,10 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       setLoadingMessage("Fetching current interest rates...");
       setLoadingProgress(10);
       
-      // Get interest rate data
-      console.log('[LoanDetailsStep] fetchExternalData: Calling getInterestRates with:', { apiKey: '***', state: userData.location.state, loanType: formData.loanType }); // Log loanType
-      const interestRate = await getInterestRates(apiKey, userData.location.state, formData.loanType); // Pass formData.loanType
-      console.log('[LoanDetailsStep] fetchExternalData: Received interestRate:', interestRate);
+      // Get interest rate data (both rates)
+      console.log('[LoanDetailsStep] fetchExternalData: Calling getInterestRates with:', { apiKey: '***', state: userData.location.state }); // Removed loanType from log
+      const ratesObject = await getInterestRates(apiKey, userData.location.state); // Removed loanType argument
+      console.log('[LoanDetailsStep] fetchExternalData: Received interestRates:', ratesObject);
       
       setLoadingProgress(40);
       setLoadingMessage("Fetching property tax information...");
@@ -86,7 +94,7 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       setLoadingMessage("Processing data...");
       
       console.log("API data retrieved:", {
-        interestRate,
+        interestRates: ratesObject, // Use the correct variable name
         propertyTaxRate,
         annualInsurance
       });
@@ -95,7 +103,7 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       console.log('[LoanDetailsStep] fetchExternalData: Updating formData state with fetched data.');
       setFormData(prev => ({
         ...prev,
-        interestRate,
+        interestRates: ratesObject, // New: store rates object
         propertyTax: propertyTaxRate,
         propertyInsurance: annualInsurance,
       }));
@@ -125,7 +133,11 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
       // Set fallback values to ensure the user can continue
       setFormData(prev => ({
         ...prev,
-        interestRate: prev.interestRate || 7.0,
+        // New: fallback rates object
+        interestRates: { 
+          conventional: prev.interestRates?.conventional ?? 7.0, 
+          fha: prev.interestRates?.fha ?? 6.75 
+        }, 
         propertyTax: prev.propertyTax || 1.0,
         propertyInsurance: prev.propertyInsurance || 1200,
       }));
@@ -138,10 +150,11 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
   };
   
   useEffect(() => {
-    console.log('[LoanDetailsStep] useEffect triggered for MIP calculation.', { loanType: formData.loanType, ltv: formData.ltv });
+    // Reverted: Removed estimation logic for monthly MI amount display on this page
+    console.log('[LoanDetailsStep] useEffect triggered for MIP rate calculation.', { loanType: formData.loanType, ltv: formData.ltv });
     if (formData.loanType === 'fha') {
       const { upfrontMipPercent, annualMipPercent } = getFhaMipRates(
-        1000, // Placeholder loan amount
+        1000, // Placeholder loan amount for rate calculation only
         formData.ltv
       );
       
@@ -163,12 +176,13 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
   // Auto-fetch data on component mount if needed
   useEffect(() => {
     console.log('[LoanDetailsStep] useEffect triggered for initial data fetch check.', { 
-      hasInterestRate: !!formData.interestRate, 
+      // New check: Check if either rate is missing
+      hasRates: !!(formData.interestRates.conventional || formData.interestRates.fha), 
       hasPropertyTax: !!formData.propertyTax, 
       hasPropertyInsurance: !!formData.propertyInsurance 
     });
-    // Only auto-fetch if we don't have the data already
-    if (!formData.interestRate || !formData.propertyTax || !formData.propertyInsurance) {
+    // Only auto-fetch if we don't have the rates already
+    if (!(formData.interestRates.conventional || formData.interestRates.fha) || !formData.propertyTax || !formData.propertyInsurance) { // New check
       console.log('[LoanDetailsStep] Initial data missing, calling fetchExternalData.');
       fetchExternalData();
     } else {
@@ -180,23 +194,27 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
     e.preventDefault();
     
     // If data hasn't been fetched yet, fetch it first
-    if (!formData.interestRate || !formData.propertyTax || !formData.propertyInsurance) {
+    if (!(formData.interestRates.conventional || formData.interestRates.fha) || !formData.propertyTax || !formData.propertyInsurance) { // New check
       await fetchExternalData();
     }
     
     // Ensure we have all required data, using fallbacks if API failed
     const dataToSave = {
       ...formData,
-      interestRate: formData.interestRate || 7.0, // Default to 7% if API failed
-      propertyTax: formData.propertyTax || 1.0,   // Default to 1% if API failed
-      propertyInsurance: formData.propertyInsurance || 1200, // Default to $1200 if API failed
+      // New: Ensure rates object has fallbacks if needed
+      interestRates: {
+        conventional: formData.interestRates?.conventional ?? 7.0,
+        fha: formData.interestRates?.fha ?? 6.75,
+      },
+      propertyTax: formData.propertyTax || 1.0,   
+      propertyInsurance: formData.propertyInsurance || 1200, 
     };
     
     // Save form data
     console.log('[LoanDetailsStep] handleSubmit: Calling updateLoanDetails with:', dataToSave);
     updateLoanDetails(dataToSave);
-    console.log('[LoanDetailsStep] handleSubmit: Calling setCurrentStep(4)'); // Changed step to 4
-    setCurrentStep(4); // Advance to the next step (Results)
+    console.log('[LoanDetailsStep] handleSubmit: Calling setCurrentStep(3)'); // Corrected step to 3 (ResultsStep)
+    setCurrentStep(3); // Advance to the next step (Results)
   };
 
   return (
@@ -270,16 +288,22 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
               <div className="text-sm pt-2">
                 <p className="font-medium">Selected Option Features:</p>
                 {formData.loanType === 'conventional' ? (
+                  // Conventional Features
                   <ul className="list-disc pl-5 text-muted-foreground space-y-1 pt-1">
                     <li>Typically requires higher credit scores (620+)</li>
                     <li>No upfront mortgage insurance</li>
-                    <li>PMI can be removed at 80% LTV</li>
+                    {formData.ltv > 80 ? (
+                      <li>PMI required until ~80% LTV</li>
+                    ) : (
+                      <li>No PMI required</li>
+                    )}
                   </ul>
                 ) : (
+                  // FHA Features
                   <ul className="list-disc pl-5 text-muted-foreground space-y-1 pt-1">
                     <li>More flexible credit requirements (580+)</li>
                     <li>Upfront mortgage insurance premium (MIP): {formData.upfrontMIP}%</li>
-                    <li>Annual MIP: {formData.ongoingMIP}% (for the life of the loan)</li>
+                    <li>Annual MIP Rate: {formData.ongoingMIP}% (for the life of the loan)</li>
                   </ul>
                 )}
               </div>
@@ -309,14 +333,16 @@ const LoanDetailsStep: React.FC<LoanDetailsStepProps> = ({ apiKey }) => {
               </div>
             </div>
             
-            {(formData.interestRate || formData.propertyTax || formData.propertyInsurance) && (
+            {/* New check: Check if rates object exists */}
+            {(formData.interestRates.conventional || formData.interestRates.fha || formData.propertyTax || formData.propertyInsurance) && (
               <div className="border rounded-lg p-4 space-y-3">
                 <h3 className="font-medium">Retrieved Data Summary</h3>
                 
-                {formData.interestRate && (
+                {/* New display logic: Show rate for selected loan type */}
+                {formData.interestRates[formData.loanType] && (
                   <div className="flex justify-between text-sm">
-                    <span>Base Interest Rate:</span>
-                    <span className="font-medium">{formData.interestRate}%</span>
+                    <span>Base Interest Rate ({formData.loanType === 'conventional' ? 'Conv.' : 'FHA'}):</span>
+                    <span className="font-medium">{formData.interestRates[formData.loanType]}%</span> 
                   </div>
                 )}
                 

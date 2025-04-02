@@ -18,40 +18,62 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const ResultsStep: React.FC = () => {
   const { userData, updateResults, setCurrentStep } = useMortgage();
-  const [isCalculating, setIsCalculating] = useState(false);
+  // Start calculating immediately
+  const [isCalculating, setIsCalculating] = useState(true); 
+  // Removed calculationComplete state
   const [currentTab, setCurrentTab] = useState("primary");
   const [validationError, setValidationError] = useState<string | null>(null);
-  
+
+  useEffect(() => {
+    console.log('[ResultsStep] Component mounted. Initial userData:', JSON.stringify(userData, null, 2));
+  }, []); // Log initial data only once on mount
+
   const validateData = () => {
+    console.log('[ResultsStep] validateData: Starting validation.'); // Log start
     const { financials, loanDetails, location } = userData;
-    
+    console.log('[ResultsStep] validateData: Checking location:', location);
+
     if (!location.city || !location.state || !location.zipCode) {
+      console.error('[ResultsStep] validateData: FAILED - Missing location info.'); // Log failure
       setValidationError("Please complete your location information in Step 1.");
       return false;
     }
-    
+    console.log('[ResultsStep] validateData: Location OK.');
+    console.log('[ResultsStep] validateData: Checking financials:', financials);
+
     if (!financials.annualIncome || financials.annualIncome <= 0) {
+      console.error('[ResultsStep] validateData: FAILED - Missing or invalid annual income.'); // Log failure
       setValidationError("Please enter your annual income in Step 2.");
       return false;
     }
-    
-    if (!loanDetails.interestRate || loanDetails.interestRate <= 0) {
-      setValidationError("Required loan details are missing. Please complete Step 3.");
+    console.log('[ResultsStep] validateData: Financials OK.');
+    console.log('[ResultsStep] validateData: Checking loanDetails:', loanDetails);
+
+    // New check: Validate the interestRates object and the rate for the current loan type
+    // Ensure interestRates exists and at least one rate is present, and the rate for the selected type is positive
+    if (!loanDetails.interestRates || !(loanDetails.interestRates.conventional || loanDetails.interestRates.fha) || (loanDetails.interestRates[loanDetails.loanType] ?? 0) <= 0) {
+      console.error('[ResultsStep] validateData: FAILED - Missing or invalid interest rate for selected loan type.', loanDetails.interestRates, loanDetails.loanType); // Log failure
+      setValidationError("Required loan details (interest rate) are missing. Please complete Step 3.");
       return false;
     }
-    
+    console.log('[ResultsStep] validateData: Interest rates OK.');
+
     if (!loanDetails.propertyTax || loanDetails.propertyTax <= 0) {
+      console.error('[ResultsStep] validateData: FAILED - Missing or invalid property tax.'); // Log failure
       setValidationError("Property tax information is missing. Please complete Step 3.");
       return false;
     }
-    
+    console.log('[ResultsStep] validateData: Property tax OK.');
+
     setValidationError(null);
+    console.log('[ResultsStep] validateData: Validation successful.'); // Log success
     return true;
   };
-  
+
   const calculateResults = async () => {
+    console.log('[ResultsStep] calculateResults: Starting calculation.'); // Log start
     setIsCalculating(true);
-    
+
     try {
       // First validate all required data
       if (!validateData()) {
@@ -61,23 +83,28 @@ const ResultsStep: React.FC = () => {
       
       // Enhanced validation for required data
       const { financials, loanDetails } = userData;
-      
+      console.log('[ResultsStep] calculateResults: Using userData:', { financials, loanDetails });
+
       // Calculate the max DTI based on FICO score, LTV, and mitigating factors
+      console.log('[ResultsStep] calculateResults: Calculating maxDTI...');
       const maxDTI = calculateMaxDTI(
         financials.ficoScore,
         loanDetails.ltv,
         loanDetails.loanType,
         financials.mitigatingFactors
       );
-      
+      console.log('[ResultsStep] calculateResults: Calculated maxDTI:', maxDTI);
+
       // Calculate the adjusted interest rate based on FICO and LTV
+      console.log('[ResultsStep] calculateResults: Calculating adjustedRate...');
       const adjustedRate = calculateAdjustedRate(
-        loanDetails.interestRate,
+        loanDetails.interestRates, // Pass the rates object
         financials.ficoScore,
         loanDetails.ltv,
         loanDetails.loanType
       );
-      
+      console.log('[ResultsStep] calculateResults: Calculated adjustedRate:', adjustedRate);
+
       // Get MIP/PMI rate (for now simplified)
       let pmiRate = 0;
       if (loanDetails.loanType === 'fha' && loanDetails.ongoingMIP) {
@@ -88,18 +115,21 @@ const ResultsStep: React.FC = () => {
                   loanDetails.ltv > 90 ? 0.8 : 
                   loanDetails.ltv > 85 ? 0.5 : 0.3;
       }
-      
+      console.log('[ResultsStep] calculateResults: Determined pmiRate:', pmiRate);
+
       // Calculate max purchase price
+      console.log('[ResultsStep] calculateResults: Calculating maxPurchasePrice...');
       const maxPurchasePrice = calculateMaxPurchasePrice(
         financials.annualIncome,
         financials.monthlyDebts,
         maxDTI,
-        adjustedRate,
+        adjustedRate, // Use the calculated adjusted rate
         loanDetails.propertyTax,
         loanDetails.propertyInsurance || 1200, // Default to $1200 if not available
         100 - loanDetails.ltv, // Convert LTV to down payment %
         pmiRate
       );
+      console.log('[ResultsStep] calculateResults: Calculated maxPurchasePrice:', maxPurchasePrice);
 
       // --- BEGIN ADDED VALIDATION ---
       if (!Number.isFinite(maxPurchasePrice) || maxPurchasePrice <= 0) {
@@ -112,16 +142,19 @@ const ResultsStep: React.FC = () => {
       
       // Calculate loan amount
       const loanAmount = maxPurchasePrice * (loanDetails.ltv / 100);
-      
+      console.log('[ResultsStep] calculateResults: Calculated loanAmount:', loanAmount);
+
       // Calculate monthly payment
+      console.log('[ResultsStep] calculateResults: Calculating monthlyPayment...');
       const monthlyPayment = calculateMonthlyPayment(
         loanAmount,
-        adjustedRate,
+        adjustedRate, // Use the calculated adjusted rate
         30, // 30-year term
         (loanDetails.propertyTax / 100) * maxPurchasePrice, // Annual property tax
         loanDetails.propertyInsurance || 1200, // Annual insurance
         pmiRate // PMI/MIP rate
       );
+      console.log('[ResultsStep] calculateResults: Calculated monthlyPayment:', monthlyPayment);
 
       // --- BEGIN ADDED VALIDATION ---
       if (!Number.isFinite(monthlyPayment) || monthlyPayment <= 0) {
@@ -131,8 +164,13 @@ const ResultsStep: React.FC = () => {
         return;
       }
       // --- END ADDED VALIDATION ---
-      
+
+      // Calculate monthly MI amount
+      const monthlyMI = (loanAmount * (pmiRate / 100)) / 12;
+      console.log('[ResultsStep] calculateResults: Calculated monthlyMI:', monthlyMI);
+
       // Generate alternative scenarios
+      console.log('[ResultsStep] calculateResults: Generating scenarios...');
       const scenarios = [];
       
       // Scenario 1: Switch loan type
@@ -147,7 +185,7 @@ const ResultsStep: React.FC = () => {
       );
       
       const altRate = calculateAdjustedRate(
-        loanDetails.interestRate,
+        loanDetails.interestRates, // Pass the rates object
         financials.ficoScore,
         loanDetails.ltv,
         alternativeLoanType
@@ -169,7 +207,7 @@ const ResultsStep: React.FC = () => {
         financials.annualIncome,
         financials.monthlyDebts,
         altDTI,
-        altRate,
+        altRate, // Use altRate
         loanDetails.propertyTax,
         loanDetails.propertyInsurance || 1200,
         100 - loanDetails.ltv,
@@ -180,7 +218,7 @@ const ResultsStep: React.FC = () => {
       
       const altMonthlyPayment = calculateMonthlyPayment(
         altLoanAmount,
-        altRate,
+        altRate, // Use altRate
         30,
         (loanDetails.propertyTax / 100) * altMaxPrice,
         loanDetails.propertyInsurance || 1200,
@@ -200,7 +238,7 @@ const ResultsStep: React.FC = () => {
       
       if (nextFicoBand) {
         const betterFicoRate = calculateAdjustedRate(
-          loanDetails.interestRate,
+          loanDetails.interestRates, // Pass the rates object
           nextFicoBand,
           loanDetails.ltv,
           loanDetails.loanType
@@ -210,7 +248,7 @@ const ResultsStep: React.FC = () => {
           financials.annualIncome,
           financials.monthlyDebts,
           maxDTI,
-          betterFicoRate,
+          betterFicoRate, // Use betterFicoRate
           loanDetails.propertyTax,
           loanDetails.propertyInsurance || 1200,
           100 - loanDetails.ltv,
@@ -221,7 +259,7 @@ const ResultsStep: React.FC = () => {
         
         const betterFicoPayment = calculateMonthlyPayment(
           betterFicoLoan,
-          betterFicoRate,
+          betterFicoRate, // Use betterFicoRate
           30,
           (loanDetails.propertyTax / 100) * betterFicoPrice,
           loanDetails.propertyInsurance || 1200,
@@ -253,7 +291,7 @@ const ResultsStep: React.FC = () => {
         }
         
         const lowerLtvRate = calculateAdjustedRate(
-          loanDetails.interestRate,
+          loanDetails.interestRates, // Pass the rates object
           financials.ficoScore,
           lowerLtv,
           loanDetails.loanType
@@ -263,7 +301,7 @@ const ResultsStep: React.FC = () => {
           financials.annualIncome,
           financials.monthlyDebts,
           maxDTI,
-          lowerLtvRate,
+          lowerLtvRate, // Use lowerLtvRate
           loanDetails.propertyTax,
           loanDetails.propertyInsurance || 1200,
           100 - lowerLtv,
@@ -274,7 +312,7 @@ const ResultsStep: React.FC = () => {
         
         const lowerLtvPayment = calculateMonthlyPayment(
           lowerLtvLoan,
-          lowerLtvRate,
+          lowerLtvRate, // Use lowerLtvRate
           30,
           (loanDetails.propertyTax / 100) * lowerLtvPrice,
           loanDetails.propertyInsurance || 1200,
@@ -294,24 +332,32 @@ const ResultsStep: React.FC = () => {
       updateResults({
         maxHomePrice: maxPurchasePrice,
         monthlyPayment: monthlyPayment,
+        maxDTI: maxDTI, 
+        monthlyMI: pmiRate > 0 ? monthlyMI : null, // Store monthly MI amount if applicable
         scenarios: scenarios,
       });
-      
-      toast.success("Mortgage calculation completed!");
+      console.log('[ResultsStep] calculateResults: Updated results in context.');
+      // Removed setCalculationComplete
+
+      toast.success("Mortgage calculation completed!"); // Ensure semicolon is present
     } catch (error) {
-      console.error("Calculation error:", error);
+      console.error("[ResultsStep] calculateResults: Calculation error caught:", error); // Log error
       toast.error("An error occurred during calculation. Please try again.");
       setValidationError("There was a problem with the calculation. Please check your inputs.");
+      // Removed setCalculationComplete
     } finally {
-      setIsCalculating(false);
+      // Calculation finished (success or error)
+      setIsCalculating(false); 
     }
   };
-  
+
+  // Run calculation only ONCE on mount
   useEffect(() => {
-    if (!userData.results.maxHomePrice) {
-      calculateResults();
-    }
-  }, []);
+    console.log('[ResultsStep] Component mounted. Running initial calculation.');
+    calculateResults();
+    // Empty dependency array ensures this runs only once
+  }, []); 
+
   
   const formatCurrency = (value: number | null): string => {
     if (value === null) return "N/A";
@@ -350,14 +396,22 @@ const ResultsStep: React.FC = () => {
               </Button>
             </div>
           </Alert>
-        ) : (
+        // Show loading state based *only* on isCalculating
+        ) : isCalculating ? ( 
+           <div className="py-8 text-center">
+             <p className="text-lg text-muted-foreground mb-4">Calculating your results...</p>
+             {/* Optionally add a spinner here */}
+           </div>
+        // Show results if not calculating AND no validation error occurred
+        ) : !validationError ? ( 
           <Tabs value={currentTab} onValueChange={setCurrentTab}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="primary">Your Results</TabsTrigger>
               <TabsTrigger value="scenarios">Improvement Scenarios</TabsTrigger>
             </TabsList>
             <TabsContent value="primary" className="space-y-6 pt-4">
-              {userData.results.maxHomePrice ? (
+              {/* Check only for maxHomePrice in the updated userData */}
+              {userData.results.maxHomePrice ? ( 
                 <>
                   <div className="grid gap-6 md:grid-cols-2">
                     <div className="financial-card text-center">
@@ -396,12 +450,18 @@ const ResultsStep: React.FC = () => {
                       
                       <div className="flex justify-between py-1 border-b">
                         <span>Interest Rate:</span>
-                        <span className="font-medium">{userData.loanDetails.interestRate ? userData.loanDetails.interestRate.toFixed(2) : 'N/A'}%</span>
+                        {/* Display the rate for the selected loan type */}
+                        <span className="font-medium">{userData.loanDetails.interestRates[userData.loanDetails.loanType] ? userData.loanDetails.interestRates[userData.loanDetails.loanType]?.toFixed(3) : 'N/A'}%</span>
                       </div>
                       
                       <div className="flex justify-between py-1 border-b">
                         <span>Loan Term:</span>
                         <span className="font-medium">30 Years</span>
+                      </div>
+
+                      <div className="flex justify-between py-1 border-b">
+                        <span>Max DTI Used:</span>
+                        <span className="font-medium">{userData.results.maxDTI ? `${userData.results.maxDTI}%` : 'N/A'}</span>
                       </div>
                       
                       <div className="flex justify-between py-1 border-b">
@@ -423,21 +483,21 @@ const ResultsStep: React.FC = () => {
                         </div>
                       )}
                       
-                      {userData.loanDetails.ltv > 80 && (
+                      {/* Display Monthly MI if applicable */}
+                      {userData.results.monthlyMI !== null && userData.results.monthlyMI > 0 && (
                         <div className="flex justify-between py-1 border-t">
                           <span>{userData.loanDetails.loanType === 'fha' ? 'Monthly MIP:' : 'Monthly PMI:'}</span>
-                          <span className="font-medium">Included in payment</span>
+                          <span className="font-medium">{formatCurrency(userData.results.monthlyMI)}</span>
                         </div>
                       )}
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : ( // Show error if calculation finished but price is still null/invalid
                 <div className="py-8 text-center">
-                  <p className="text-lg text-muted-foreground mb-4">Calculating your results...</p>
-                  <Button onClick={calculateResults} disabled={isCalculating}>
-                    {isCalculating ? "Calculating..." : "Recalculate"}
-                  </Button>
+                  <p className="text-lg text-muted-foreground mb-4">
+                    Could not determine results. Please check inputs.
+                  </p>
                 </div>
               )}
             </TabsContent>
@@ -498,7 +558,7 @@ const ResultsStep: React.FC = () => {
               </div>
             </TabsContent>
           </Tabs>
-        )}
+        ) : null /* Render nothing if validationError is set and not calculating */ } 
       </CardContent>
       <CardFooter className="flex justify-between">
         <Button 
